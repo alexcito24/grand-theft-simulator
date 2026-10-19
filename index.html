@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grand Theft Simulator</title>
+<style>
+  *{box-sizing:border-box} body{margin:0;background:#10151b;color:#fff;font-family:Arial,Helvetica,sans-serif}
+  .wrap{max-width:1100px;margin:auto;padding:14px}
+  header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+  h1{font-size:clamp(22px,4vw,34px);margin:0;letter-spacing:1px;text-transform:uppercase}
+  h1 span{color:#8be05a}
+  .stats{display:flex;gap:8px;flex-wrap:wrap}.pill{background:#222c36;border:1px solid #394754;border-radius:9px;padding:8px 12px;font-weight:bold}
+  canvas{display:block;width:100%;height:auto;border:2px solid #455361;border-radius:12px;background:#59695b;box-shadow:0 12px 35px #0008}
+  .below{display:grid;grid-template-columns:1.2fr 1fr;gap:12px;margin-top:12px}
+  .panel{background:#1a222b;border:1px solid #34414d;border-radius:12px;padding:14px}
+  .panel h2{font-size:15px;text-transform:uppercase;color:#a9ed7c;margin:0 0 8px}
+  .panel p{margin:5px 0;line-height:1.45;color:#dbe3e8}
+  .controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  button{background:#8be05a;border:0;border-radius:8px;padding:10px 14px;font-weight:bold;cursor:pointer;color:#14200e}
+  button.secondary{background:#34414d;color:white}
+  .touch{display:none;grid-template-columns:repeat(3,54px);gap:6px;justify-content:center;margin-top:12px}
+  .touch button{height:48px;padding:0;font-size:19px}
+  @media(max-width:650px){.below{grid-template-columns:1fr}.touch{display:grid}.wrap{padding:8px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1><span>Grand Theft</span> Simulator</h1>
+  <div class="stats">
+    <div class="pill">💵 $<span id="cash">250</span></div>
+    <div class="pill">❤️ Salud: <span id="health">100</span>%</div>
+    <div class="pill">🚨 <span id="wanted">☆☆☆☆☆</span></div><div class="pill">🕒 <span id="clock">08:00</span></div><div class="pill">🏠 <span id="home">Sin casa</span></div>
+  </div>
+</header>
+<canvas id="game" width="960" height="560" aria-label="Juego de ciudad en mundo abierto"></canvas>
+<div class="below">
+  <section class="panel">
+    <h2>📍 Misión actual</h2>
+    <p id="mission">Ve al círculo amarillo para recoger el paquete.</p>
+    <p id="activity">Explora la ciudad, consigue dinero y evita a la policía. Acércate al coche azul y pulsa <b>E</b> para entrar o salir.</p>
+    <div class="controls">
+      <button id="start">Nueva partida</button>
+      <button id="carBtn" class="secondary">Entrar / salir del coche (E)</button><button id="robBtn" class="secondary">Atracar tienda (R)</button><button id="jobBtn" class="secondary">Hacer trabajo (T)</button><button id="houseBtn" class="secondary">Comprar casa ($1.000)</button>
+    </div>
+  </section>
+  <section class="panel">
+    <h2>🎮 Controles</h2>
+    <p><b>WASD</b> o <b>flechas</b>: moverte / conducir</p>
+    <p><b>E</b>: entrar o salir del coche</p>
+    <p><b>Espacio</b>: freno de mano</p>
+    <p><b>Objetivo:</b> llega al marcador amarillo y gana $500. <b>R</b>: atraco ficticio · <b>T</b>: trabajo · <b>H</b>: comprar casa.</p>
+  </section>
+</div>
+<div class="touch" aria-label="Controles táctiles">
+  <span></span><button data-key="ArrowUp">▲</button><span></span>
+  <button data-key="ArrowLeft">◀</button><button data-key="ArrowDown">▼</button><button data-key="ArrowRight">▶</button>
+</div>
+</div>
+<script>
+(() => {
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+const W=canvas.width,H=canvas.height, worldW=2200,worldH=1700;
+const keys={}; let cash=250,health=100,wanted=0,inCar=false,missionDone=false;
+const player={x:260,y:280,r:12,angle:0,speed:0};
+const car={x:330,y:300,angle:0,speed:0};
+const target={x:1750,y:1270,r:24};
+const traffic=[];
+for(let i=0;i<18;i++) traffic.push({x:150+((i*173)%2000),y:95+((i*127)%1550),dir:i%2===0?0:Math.PI/2,color:['#d9d5c7','#c94336','#4b85a8','#d7b43d'][i%4],speed:0.6+(i%4)*0.25});
+const cops=[{x:900,y:500,angle:0,speed:0}];
+let gameMinutes=8*60; let hasHome=false;
+const blocks=[];
+for(let y=70;y<worldH-100;y+=230) for(let x=70;x<worldW-100;x+=260){
+  blocks.push({x:x+(Math.sin(x*y)*18),y:y+(Math.cos(x+y)*14),w:150+((x+y)%45),h:105+((x*y)%40)});
+}
+const parks=[{x:760,y:470,w:250,h:170},{x:1380,y:220,w:220,h:180},{x:300,y:1120,w:260,h:200}];
+function reset(){cash=250;health=100;wanted=0;inCar=false;missionDone=false;gameMinutes=8*60;hasHome=false;document.getElementById("home").textContent="Sin casa";document.getElementById("activity").textContent="Explora la ciudad, consigue dinero y evita a la policía.";player.x=260;player.y=280;car.x=330;car.y=300;car.speed=0;target.x=1750;target.y=1270;document.getElementById('mission').textContent='Ve al círculo amarillo para recoger el paquete.';updateStats()}
+function updateStats(){document.getElementById('cash').textContent=cash;document.getElementById('health').textContent=health;document.getElementById('wanted').textContent='★'.repeat(wanted)+'☆'.repeat(5-wanted)}
+function toggleCar(){const d=Math.hypot(player.x-car.x,player.y-car.y);if(inCar){inCar=false;player.x=car.x+24;player.y=car.y+14;player.angle=car.angle;}else if(d<65){inCar=true;}}
+document.getElementById('start').onclick=reset;document.getElementById('carBtn').onclick=toggleCar;
+function doRobbery(){if(wanted>=5){document.getElementById('activity').textContent='La policía te está buscando demasiado. Escóndete e inténtalo más tarde.';return;}cash+=180;wanted=Math.min(5,wanted+2);document.getElementById('activity').textContent='¡Atraco ficticio completado! +$180. La policía ha recibido un aviso.';updateStats()}
+function doJob(){cash+=100;document.getElementById('activity').textContent='Has terminado un trabajo de reparto. +$100.';updateStats()}
+function buyHome(){if(hasHome){document.getElementById('activity').textContent='Ya tienes una casa. ¡Es tu refugio!';return;}if(cash>=1000){cash-=1000;hasHome=true;document.getElementById('home').textContent='Comprada';document.getElementById('activity').textContent='¡Has comprado una casa! Ahora tienes un refugio.';}else{document.getElementById('activity').textContent='Necesitas $1.000 para comprar una casa. Haz trabajos o completa misiones.';}updateStats()}
+document.getElementById('robBtn').onclick=doRobbery;document.getElementById('jobBtn').onclick=doJob;document.getElementById('houseBtn').onclick=buyHome;
+window.addEventListener('keydown',e=>{keys[e.key.toLowerCase()]=true;if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key))e.preventDefault();if(e.key.toLowerCase()==='e'&&!e.repeat)toggleCar();if(e.key.toLowerCase()==='r'&&!e.repeat)doRobbery();if(e.key.toLowerCase()==='t'&&!e.repeat)doJob();if(e.key.toLowerCase()==='h'&&!e.repeat)buyHome()});
+window.addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
+document.querySelectorAll('[data-key]').forEach(b=>{const k=b.dataset.key;b.addEventListener('pointerdown',e=>{e.preventDefault();keys[k]=true});['pointerup','pointerleave','pointercancel'].forEach(ev=>b.addEventListener(ev,()=>keys[k]=false))});
+function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+function road(x,y){return (x%260)<65||(y%230)<65}
+function drawCar(x,y,a,color,scale=1){
+ ctx.save();ctx.translate(x,y);ctx.rotate(a);ctx.scale(scale,scale);
+ ctx.fillStyle='#101418';ctx.fillRect(-22,-13,44,26);ctx.fillStyle=color;ctx.fillRect(-24,-10,48,20);
+ ctx.fillStyle='#b9e9f5';ctx.fillRect(-10,-8,17,16);ctx.fillStyle='#f5f4d8';ctx.fillRect(19,-7,4,5);ctx.fillRect(19,2,4,5);
+ ctx.restore();
+}
+function draw(){
+ ctx.clearRect(0,0,W,H);
+ const focus=inCar?car:player,cx=clamp(focus.x-W/2,0,worldW-W),cy=clamp(focus.y-H/2,0,worldH-H);
+ ctx.save();ctx.translate(-cx,-cy);
+ ctx.fillStyle='#657b62';ctx.fillRect(0,0,worldW,worldH);
+ // Street grid
+ ctx.fillStyle='#343d43';
+ for(let x=0;x<worldW;x+=260)ctx.fillRect(x,0,65,worldH);
+ for(let y=0;y<worldH;y+=230)ctx.fillRect(0,y,worldW,65);
+ ctx.strokeStyle='#c4b76b';ctx.lineWidth=2;ctx.setLineDash([14,16]);
+ for(let x=32;x<worldW;x+=260){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,worldH);ctx.stroke()}
+ for(let y=32;y<worldH;y+=230){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(worldW,y);ctx.stroke()}
+ ctx.setLineDash([]);
+ parks.forEach(p=>{ctx.fillStyle='#3f8a55';ctx.fillRect(p.x,p.y,p.w,p.h);for(let i=0;i<10;i++){ctx.fillStyle='#245f3a';ctx.beginPath();ctx.arc(p.x+15+(i*37)%p.w,p.y+20+(i*53)%p.h,8,0,Math.PI*2);ctx.fill()}});
+ blocks.forEach((b,i)=>{ctx.fillStyle='#0003';ctx.fillRect(b.x+7,b.y+8,b.w,b.h);ctx.fillStyle=['#a9a69b','#b7b2a7','#8c999c','#b9a18b'][i%4];ctx.fillRect(b.x,b.y,b.w,b.h);ctx.fillStyle='#d7d5c8';ctx.fillRect(b.x+8,b.y+8,b.w-16,8);ctx.fillStyle='#5a6b73';for(let wx=b.x+15;wx<b.x+b.w-8;wx+=24)for(let wy=b.y+25;wy<b.y+b.h-8;wy+=24)ctx.fillRect(wx,wy,9,10)});
+ // Mission marker
+ if(!missionDone){ctx.strokeStyle='#ffdf39';ctx.lineWidth=5;ctx.beginPath();ctx.arc(target.x,target.y,target.r+5+Math.sin(Date.now()/180)*4,0,Math.PI*2);ctx.stroke();ctx.fillStyle='#ffdf3955';ctx.beginPath();ctx.arc(target.x,target.y,target.r,0,Math.PI*2);ctx.fill();ctx.fillStyle='#fff';ctx.font='bold 14px Arial';ctx.fillText('MISIÓN',target.x-28,target.y-35)}
+ drawCar(car.x,car.y,car.angle,'#2589df',1);
+ if(!inCar){ctx.fillStyle='#f1c7a0';ctx.beginPath();ctx.arc(player.x,player.y,player.r,0,Math.PI*2);ctx.fill();ctx.fillStyle='#243b62';ctx.fillRect(player.x-8,player.y+4,16,13);ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(player.x,player.y);ctx.lineTo(player.x+Math.cos(player.angle)*20,player.y+Math.sin(player.angle)*20);ctx.stroke()}
+ // Mini map
+ ctx.restore();
+ ctx.fillStyle='#101820dd';ctx.fillRect(W-176,14,162,126);ctx.strokeStyle='#d7e1e8';ctx.strokeRect(W-176,14,162,126);
+ ctx.save();ctx.beginPath();ctx.rect(W-170,20,150,114);ctx.clip();ctx.translate(W-170,20);ctx.scale(150/worldW,114/worldH);
+ ctx.fillStyle='#667763';ctx.fillRect(0,0,worldW,worldH);ctx.fillStyle='#343d43';for(let x=0;x<worldW;x+=260)ctx.fillRect(x,0,65,worldH);for(let y=0;y<worldH;y+=230)ctx.fillRect(0,y,worldW,65);
+ if(!missionDone){ctx.fillStyle='#ffdf39';ctx.beginPath();ctx.arc(target.x,target.y,28,0,Math.PI*2);ctx.fill()}
+ ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(focus.x,focus.y,35,0,Math.PI*2);ctx.fill();ctx.restore();
+ ctx.fillStyle='#fff';ctx.font='bold 15px Arial';ctx.fillText(inCar?'VEHÍCULO':'A PIE',16,27);
+ if(!inCar&&Math.hypot(player.x-car.x,player.y-car.y)<65){ctx.fillStyle='#fff';ctx.fillText('Pulsa E para conducir',16,50)}
+ if(missionDone){ctx.fillStyle='#122016dd';ctx.fillRect(W/2-170,H/2-42,340,84);ctx.fillStyle='#a5f078';ctx.font='bold 25px Arial';ctx.textAlign='center';ctx.fillText('¡MISIÓN COMPLETADA!',W/2,H/2-3);ctx.font='16px Arial';ctx.fillStyle='#fff';ctx.fillText('Has ganado $500',W/2,H/2+24);ctx.textAlign='left'}
+}
+function update(){
+ const up=keys.w||keys.arrowup,down=keys.s||keys.arrowdown,left=keys.a||keys.arrowleft,right=keys.d||keys.arrowright;
+ if(inCar){
+   if(up)car.speed=Math.min(car.speed+0.14,5.4);else if(down)car.speed=Math.max(car.speed-0.17,-2.7);else car.speed*=0.97;
+   if(keys[' '])car.speed*=0.88;
+   car.angle+=(right?1:0-left?1:0)*0; // replaced below
+   if(left)car.angle-=0.045*(car.speed>=0?1:-1);if(right)car.angle+=0.045*(car.speed>=0?1:-1);
+   car.x=clamp(car.x+Math.cos(car.angle)*car.speed,12,worldW-12);car.y=clamp(car.y+Math.sin(car.angle)*car.speed,12,worldH-12);
+   player.x=car.x;player.y=car.y;
+ }else{
+   let dx=(right?1:0)-(left?1:0),dy=(down?1:0)-(up?1:0);if(dx||dy){const l=Math.hypot(dx,dy);dx/=l;dy/=l;player.x=clamp(player.x+dx*3.2,8,worldW-8);player.y=clamp(player.y+dy*3.2,8,worldH-8);player.angle=Math.atan2(dy,dx)}
+ }
+ const f=inCar?car:player;
+ if(!missionDone&&Math.hypot(f.x-target.x,f.y-target.y)<48){missionDone=true;cash+=500;wanted=Math.min(5,wanted+1);document.getElementById('mission').textContent='¡Buen trabajo! Misión completada. Explora la ciudad o inicia una nueva partida.';updateStats()}
+ draw();requestAnimationFrame(update);
+}
+update();
+})();
+</script>
+</body>
+</html>
